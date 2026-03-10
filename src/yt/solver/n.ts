@@ -113,7 +113,7 @@ export function extract(
     if (matchesStructure(catchBody, catchBlockBody)) {
       return makeSolverFuncFromName(name);
     }
-    return null;
+    return extractFromNRole(node);
   }
 
   if (node.type === "VariableDeclaration") {
@@ -146,7 +146,7 @@ export function extract(
       }
     }
   }
-  return null;
+  return extractFromNRole(node);
 }
 
 function makeSolverFuncFromName(name: string): ESTree.ArrowFunctionExpression {
@@ -176,4 +176,115 @@ function makeSolverFuncFromName(name: string): ESTree.ArrowFunctionExpression {
     expression: false,
     generator: false,
   };
+}
+
+function extractFromNRole(node: ESTree.Node): ESTree.ArrowFunctionExpression | null {
+  const block = getFunctionBlock(node);
+  if (!block) return null;
+
+  const nVars = new Set<string>();
+  let hasNGet = false;
+  let hasNPathHint = false;
+  let transformName: string | null = null;
+
+  walk(block, (n, parent) => {
+    if (n.type === "Literal" && typeof n.value === "string") {
+      if (n.value === "n" || n.value.includes("/n/")) hasNPathHint = true;
+      return;
+    }
+
+    if (
+      n.type === "CallExpression" &&
+      n.callee.type === "MemberExpression" &&
+      n.callee.property.type === "Identifier" &&
+      n.callee.property.name === "get" &&
+      n.arguments[0]?.type === "Literal" &&
+      n.arguments[0].value === "n"
+    ) {
+      hasNGet = true;
+      if (
+        parent?.type === "VariableDeclarator" &&
+        parent.id.type === "Identifier"
+      ) {
+        nVars.add(parent.id.name);
+      }
+      if (
+        parent?.type === "AssignmentExpression" &&
+        parent.left.type === "Identifier"
+      ) {
+        nVars.add(parent.left.name);
+      }
+      return;
+    }
+
+    if (
+      transformName === null &&
+      n.type === "CallExpression" &&
+      n.callee.type === "Identifier" &&
+      n.callee.name !== "decodeURIComponent" &&
+      n.arguments.some((arg) => arg.type === "Identifier" && nVars.has(arg.name))
+    ) {
+      transformName = n.callee.name;
+    }
+  });
+
+  if (!hasNGet || !hasNPathHint || !transformName) {
+    return null;
+  }
+  return makeSolverFuncFromName(transformName);
+}
+
+function getFunctionBlock(node: ESTree.Node): ESTree.BlockStatement | null {
+  if (
+    node.type === "FunctionDeclaration" ||
+    node.type === "FunctionExpression" ||
+    node.type === "ArrowFunctionExpression"
+  ) {
+    return node.body.type === "BlockStatement" ? node.body : null;
+  }
+  if (
+    node.type === "ExpressionStatement" &&
+    node.expression.type === "AssignmentExpression" &&
+    (node.expression.right.type === "FunctionExpression" ||
+      node.expression.right.type === "ArrowFunctionExpression")
+  ) {
+    return node.expression.right.body.type === "BlockStatement"
+      ? node.expression.right.body
+      : null;
+  }
+  if (node.type === "VariableDeclaration") {
+    for (const declaration of node.declarations) {
+      if (
+        declaration.init?.type === "FunctionExpression" ||
+        declaration.init?.type === "ArrowFunctionExpression"
+      ) {
+        return declaration.init.body.type === "BlockStatement"
+          ? declaration.init.body
+          : null;
+      }
+    }
+  }
+  return null;
+}
+
+function walk(
+  node: ESTree.Node,
+  cb: (node: ESTree.Node, parent: ESTree.Node | null) => void,
+  parent: ESTree.Node | null = null,
+) {
+  cb(node, parent);
+  for (const value of Object.values(node as Record<string, unknown>)) {
+    if (!value) continue;
+    if (Array.isArray(value)) {
+      for (const child of value) {
+        if (child && typeof child === "object" && "type" in child) {
+          walk(child as ESTree.Node, cb, node);
+        }
+      }
+      continue;
+    }
+    if (typeof value === "object" && "type" in value) {
+      walk(value as ESTree.Node, cb, node);
+    }
+  }
 }

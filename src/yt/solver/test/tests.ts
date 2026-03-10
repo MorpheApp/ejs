@@ -483,6 +483,20 @@ export const tests: {
       },
     ],
   },
+  {
+    player: "6c5cb4f4",
+      // Synthetic test copied from another script for manual eyeballing
+    n: [{ input: "ZdZIqFPQK-Ty8wId", expected: "1qov8-KM-yH" }],
+    sig: [
+      // Synthetic test copied from another script for manual eyeballing
+      {
+        input:
+          "gN7a-hudCuAuPH6fByOk1_GNXN0yNMHShjZXS2VOgsEItAJz0tipeavEOmNdYN-wUtcEqD3bCXjc0iyKfAyZxCBGgIARwsSdQfJ2CJtt",
+        expected:
+          "MhudCuAuP-6fByOk1_GNXN7gNHHShjyXS2VOgsEItAJz0tipeav0OmNdYN-wUtcEqD3bCXjc0iyKfAyZxCBGgIARwsSdQfJ2CJtt",
+      },
+    ],
+  },
 ];
 
 export const players = new Map([

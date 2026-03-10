@@ -179,7 +179,7 @@ export function extract(
       }
     }
   } else {
-    return null;
+    return extractFromSigRole(node);
   }
 
   for (const block of blocks) {
@@ -285,5 +285,127 @@ export function extract(
     };
   }
 
+  const fromRoleFallback = extractFromSigRole(node);
+  if (fromRoleFallback) {
+    return fromRoleFallback;
+  }
+
   return null;
+}
+
+function extractFromSigRole(node: ESTree.Node): ESTree.ArrowFunctionExpression | null {
+  const block = getFunctionBlock(node);
+  if (!block) return null;
+
+  let hasSigHint = false;
+  let hasSetCall = false;
+  let hasDecode = false;
+  let transformCall: ESTree.CallExpression | null = null;
+
+  walk(block, (n) => {
+    if (n.type === "Literal" && typeof n.value === "string") {
+      if (n.value === "signatureCipher" || n.value === "s" || n.value === "sp") {
+        hasSigHint = true;
+      }
+      return;
+    }
+    if (n.type !== "CallExpression") return;
+
+    if (
+      n.callee.type === "MemberExpression" &&
+      n.callee.property.type === "Identifier" &&
+      n.callee.property.name === "set"
+    ) {
+      hasSetCall = true;
+    }
+
+    if (
+      n.callee.type === "Identifier" &&
+      n.callee.name !== "decodeURIComponent" &&
+      n.arguments.some(
+        (arg) =>
+          arg.type === "CallExpression" &&
+          arg.callee.type === "Identifier" &&
+          arg.callee.name === "decodeURIComponent",
+      )
+    ) {
+      hasDecode = true;
+      if (!transformCall) {
+        transformCall = n;
+      }
+    }
+  });
+
+  if (!hasSigHint || !hasSetCall || !hasDecode || !transformCall) {
+    return null;
+  }
+
+  return {
+    type: "ArrowFunctionExpression",
+    params: [
+      {
+        type: "Identifier",
+        name: "sig",
+      },
+    ],
+    body: processSigCallExpression(transformCall),
+    async: false,
+    expression: false,
+    generator: false,
+  };
+}
+
+function getFunctionBlock(node: ESTree.Node): ESTree.BlockStatement | null {
+  if (
+    node.type === "FunctionDeclaration" ||
+    node.type === "FunctionExpression" ||
+    node.type === "ArrowFunctionExpression"
+  ) {
+    return node.body.type === "BlockStatement" ? node.body : null;
+  }
+  if (
+    node.type === "ExpressionStatement" &&
+    node.expression.type === "AssignmentExpression" &&
+    (node.expression.right.type === "FunctionExpression" ||
+      node.expression.right.type === "ArrowFunctionExpression")
+  ) {
+    return node.expression.right.body.type === "BlockStatement"
+      ? node.expression.right.body
+      : null;
+  }
+  if (node.type === "VariableDeclaration") {
+    for (const declaration of node.declarations) {
+      if (
+        declaration.init?.type === "FunctionExpression" ||
+        declaration.init?.type === "ArrowFunctionExpression"
+      ) {
+        return declaration.init.body.type === "BlockStatement"
+          ? declaration.init.body
+          : null;
+      }
+    }
+  }
+  return null;
+}
+
+function walk(
+  node: ESTree.Node,
+  cb: (node: ESTree.Node, parent: ESTree.Node | null) => void,
+  parent: ESTree.Node | null = null,
+) {
+  cb(node, parent);
+  for (const value of Object.values(node as Record<string, unknown>)) {
+    if (!value) continue;
+    if (Array.isArray(value)) {
+      for (const child of value) {
+        if (child && typeof child === "object" && "type" in child) {
+          walk(child as ESTree.Node, cb, node);
+        }
+      }
+      continue;
+    }
+    if (typeof value === "object" && "type" in value) {
+      walk(value as ESTree.Node, cb, node);
+    }
+  }
 }
