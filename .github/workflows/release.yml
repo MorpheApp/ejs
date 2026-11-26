@@ -19,7 +19,7 @@ jobs:
           persist-credentials: false
       - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb  # v2.0.3
         with:
-          deno-version: 3fbb1daddbc9333cddf0d8c0735811717dd70f7a  # v2.6.3
+          deno-version: "2.6.3"
           cache: false
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
